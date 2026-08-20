@@ -1,0 +1,29 @@
+services:
+    boilerplate-app:
+        container_name: boilerplate-app
+        image: boilerplate:${PROD_DEPLOY_TAG}
+        expose:
+            - "${PORT}"
+        labels:
+            - "traefik.enable=true"
+            - "traefik.http.routers.boilerplate.rule=Host(`${APP_SUBDOMAIN}`)"
+            - "traefik.http.routers.boilerplate.entrypoints=websecure"
+            - "traefik.http.routers.boilerplate.tls.certresolver=letsencrypt"
+            - "traefik.http.services.boilerplate.loadbalancer.server.port=${PORT}"
+        environment:
+            - HOSTNAME=0.0.0.0
+        env_file:
+            - .env
+        healthcheck:
+            # Cambiamos a una petición GET real (quitamos --spider)
+            # Auth.js no soporta HEAD (UnknownAction), por eso fallaba.
+            test: ["CMD", "wget", "--no-verbose", "--tries=1", "--output-document=-", "http://127.0.0.1:${PORT}/api/auth/providers"]
+            interval: 30s
+            timeout: 5s
+            retries: 3
+            start_period: 20s
+        networks:
+            - rm_monkeycore_network
+networks:
+    rm_monkeycore_network:
+        external: true
