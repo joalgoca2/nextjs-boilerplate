@@ -218,7 +218,7 @@ async function main() {
   console.log("  -> Seeding Plan Configurations...");
   await prisma.planConfig.upsert({
     where: { planName: "Free" },
-    update: { currency: "USD" },
+    update: { currency: "USD", hasAiAgent: false },
     create: {
       planName: "Free",
       priceMonthly: 0,
@@ -227,12 +227,13 @@ async function main() {
       maxProjects: 3,
       allowCSVImportExport: false,
       hasLiveSupport: false,
+      hasAiAgent: false,
     },
   });
 
   await prisma.planConfig.upsert({
     where: { planName: "Pro" },
-    update: { currency: "USD" },
+    update: { currency: "USD", hasAiAgent: true },
     create: {
       planName: "Pro",
       priceMonthly: 19,
@@ -241,12 +242,13 @@ async function main() {
       maxProjects: 25,
       allowCSVImportExport: true,
       hasLiveSupport: true,
+      hasAiAgent: true,
     },
   });
 
   await prisma.planConfig.upsert({
     where: { planName: "Enterprise" },
-    update: { currency: "USD" },
+    update: { currency: "USD", hasAiAgent: true },
     create: {
       planName: "Enterprise",
       priceMonthly: 99,
@@ -255,6 +257,7 @@ async function main() {
       maxProjects: 999999,
       allowCSVImportExport: true,
       hasLiveSupport: true,
+      hasAiAgent: true,
     },
   });
 

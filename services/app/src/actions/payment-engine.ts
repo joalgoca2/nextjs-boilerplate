@@ -229,8 +229,8 @@ export async function getBrandPaymentConfigAction(
       return { success: false, error: "Unauthorized" };
     }
 
-    const config = await prisma.brandPaymentConfig.findUnique({
-      where: { brandId },
+    const config = await prisma.brandPaymentConfig.findFirst({
+      where: { brandId, isActive: true },
       select: { gatewayType: true, publicKey: true, isActive: true },
     });
 

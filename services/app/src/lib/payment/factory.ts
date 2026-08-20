@@ -19,8 +19,8 @@ export class PaymentGatewayFactory {
     }
 
     // 2. Query Tenant Brand payment configuration from DB
-    const config = await prisma.brandPaymentConfig.findUnique({
-      where: { brandId },
+    const config = await prisma.brandPaymentConfig.findFirst({
+      where: { brandId, isActive: true },
     });
 
     // Fallback to SaaS platform env variables if tenant brand has no active config

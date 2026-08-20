@@ -284,7 +284,10 @@ export function BrandPaymentGatewaysList({
               <span>¿Eliminar Configuración de Pasarela?</span>
             </AlertDialogTitle>
             <AlertDialogDescription className="text-xs text-zinc-600 dark:text-zinc-400">
-              Esta acción eliminará las credenciales privadas de la pasarela para esta empresa. Tu marca no podrá recibir nuevos pagos a través de este proveedor hasta reconfigurarlo.
+              {t(
+                "brandPaymentGateways.confirmDeleteDesc",
+                "Esta acción eliminará las credenciales de la pasarela para esta empresa."
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter className="gap-2">

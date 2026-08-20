@@ -41,6 +41,7 @@ export interface PlanConfig {
   maxProjects: number;
   allowCSVImportExport: boolean;
   hasLiveSupport: boolean;
+  hasAiAgent?: boolean;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 }

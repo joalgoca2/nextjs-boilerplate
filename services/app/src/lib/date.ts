@@ -3,7 +3,16 @@
  * Enforces UTC database storage & localized UI rendering via Intl.DateTimeFormat
  */
 
-export type DateFormatStyle = "date" | "datetime" | "time" | "full" | "relative";
+export type DateFormatStyle =
+  | "date"
+  | "datetime"
+  | "time"
+  | "full"
+  | "relative"
+  | "PPP"
+  | "PP"
+  | "dd/MM/yy"
+  | (string & {});
 
 export interface FormatDateOptions {
   locale?: string; // e.g. "es", "en", "pt"

@@ -270,6 +270,7 @@ model PlanConfig {
   maxProjects             Int      @default(3)
   allowCSVImportExport    Boolean  @default(false)
   hasLiveSupport          Boolean  @default(false)
+  hasAiAgent              Boolean  @default(false)
 
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt

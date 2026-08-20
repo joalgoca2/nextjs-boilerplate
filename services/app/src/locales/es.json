@@ -683,5 +683,18 @@
     "deleteError": "No se pudo eliminar la pasarela.",
     "confirmDeleteTitle": "¿Eliminar Configuración de Pasarela?",
     "confirmDeleteDesc": "Esta acción eliminará las credenciales privadas de la pasarela para esta empresa. Tu marca no podrá recibir nuevos pagos a través de este proveedor hasta reconfigurarlo."
+  },
+  "aiChat": {
+    "title": "Asistente IA",
+    "subtitle": "Asistencia inteligente y soporte de tu marca",
+    "placeholder": "Escribe una pregunta sobre la app...",
+    "send": "Enviar",
+    "clearHistory": "Limpiar chat",
+    "suggestionTitle": "Preguntas frecuentes:",
+    "suggestionPlan": "¿Qué plan tengo activo y cómo cambio de plan?",
+    "suggestionBrand": "¿Cómo configuro las pasarelas de mi marca?",
+    "suggestionSecurity": "¿Cómo cambio mi PIN de seguridad?",
+    "typing": "El asistente está pensando...",
+    "disclaimer": "Respuestas basadas en los datos de tu sesión y configuraciones del sistema."
   }
 }

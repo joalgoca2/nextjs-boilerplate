@@ -2,6 +2,12 @@ services:
     boilerplate-app:
         container_name: boilerplate-app
         image: boilerplate:${PROD_DEPLOY_TAG}
+        read_only: true
+        tmpfs:
+            - /tmp
+            - /app/.next/cache
+        security_opt:
+            - "no-new-privileges:true"
         expose:
             - "${PORT}"
         labels:

@@ -683,5 +683,18 @@
     "deleteError": "Could not delete gateway.",
     "confirmDeleteTitle": "Delete Gateway Configuration?",
     "confirmDeleteDesc": "This action will remove the private gateway credentials for this company. Your brand won't be able to receive new payments through this provider until reconfigured."
+  },
+  "aiChat": {
+    "title": "AI Assistant",
+    "subtitle": "Smart assistant and brand support",
+    "placeholder": "Ask a question about the app...",
+    "send": "Send",
+    "clearHistory": "Clear chat",
+    "suggestionTitle": "Frequently asked questions:",
+    "suggestionPlan": "Which plan do I have active and how do I change it?",
+    "suggestionBrand": "How do I configure my brand payment gateways?",
+    "suggestionSecurity": "How do I change my security PIN?",
+    "typing": "Assistant is thinking...",
+    "disclaimer": "Answers based on your active session data and system settings."
   }
 }

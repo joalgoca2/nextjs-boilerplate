@@ -683,5 +683,18 @@
     "deleteError": "Não foi possível excluir o gateway.",
     "confirmDeleteTitle": "Excluir Configuração de Gateway?",
     "confirmDeleteDesc": "Esta ação removerá as credenciais privadas do gateway desta empresa. Sua marca não poderá receber novos pagamentos através deste provedor até reconfigurá-lo."
+  },
+  "aiChat": {
+    "title": "Assistente IA",
+    "subtitle": "Assistência inteligente e suporte da sua marca",
+    "placeholder": "Digite uma pergunta sobre o app...",
+    "send": "Enviar",
+    "clearHistory": "Limpar chat",
+    "suggestionTitle": "Perguntas frequentes:",
+    "suggestionPlan": "Qual plano tenho ativo e como posso alterá-lo?",
+    "suggestionBrand": "Como configuro os gateways de pagamento da minha marca?",
+    "suggestionSecurity": "Como altero meu PIN de segurança?",
+    "typing": "O assistente está pensando...",
+    "disclaimer": "Respostas baseadas nos dados da sua sessão e configurações do sistema."
   }
 }

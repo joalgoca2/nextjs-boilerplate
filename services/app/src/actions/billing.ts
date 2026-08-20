@@ -60,6 +60,7 @@ export async function getPlanConfigs(params?: {
       maxProjects: p.maxProjects,
       allowCSVImportExport: p.allowCSVImportExport,
       hasLiveSupport: p.hasLiveSupport,
+      hasAiAgent: (p as unknown as { hasAiAgent?: boolean }).hasAiAgent ?? false,
       createdAt: p.createdAt,
       updatedAt: p.updatedAt,
     }));
@@ -388,9 +389,12 @@ export async function switchBrandSubscriptionPlanAction(params: {
       orderBy: { createdAt: "desc" },
     });
 
-    const isDowngrade = currentSub && effectivePrice < currentSub.price && currentSub.endDate > new Date();
+    const isDowngrade =
+      Boolean(currentSub) &&
+      effectivePrice < currentSub!.price &&
+      currentSub!.endDate > new Date();
 
-    if (isDowngrade) {
+    if (isDowngrade && currentSub) {
       // Schedule Downgrade at Period End
       await prisma.subscription.update({
         where: { id: currentSub.id },
@@ -398,7 +402,9 @@ export async function switchBrandSubscriptionPlanAction(params: {
           scheduledPlanName: effectivePlanName,
           cancelAtPeriodEnd: true,
         },
-      });      // Create Notification for User
+      });
+
+      // Create Notification for User
       if (params.userId) {
         await createLocalizedNotification({
           userId: params.userId,
@@ -412,10 +418,15 @@ export async function switchBrandSubscriptionPlanAction(params: {
         });
       }
 
+      const activePlan = currentSub.planName;
+      const msg =
+        `Cambio a ${effectivePlanName} programado exitosamente. ` +
+        `Mantendrás tu plan ${activePlan} hasta su fecha de vencimiento.`;
+
       return {
         success: true,
         data: true,
-        message: `Cambio a ${effectivePlanName} programado exitosamente. Mantendrás tu plan ${currentSub.planName} hasta su fecha de vencimiento.`,
+        message: msg,
       };
     }
 

@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { WalkthroughWizard } from "@/components/onboarding/walkthrough-wizard";
 import { LockScreen } from "@/components/security/lock-screen";
+import { AiChatWidget } from "@/components/ai/ai-chat-widget";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession();
@@ -41,6 +42,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           </div>
           <WalkthroughWizard />
           <LockScreen />
+          <AiChatWidget />
         </div>
       </SidebarProvider>
     </BrandProvider>
