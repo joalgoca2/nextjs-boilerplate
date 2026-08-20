@@ -141,31 +141,20 @@ export async function getAvailableSaaSGatewaysAction(): Promise<
       return { success: false, error: "Unauthorized" };
     }
 
-    const providersEnv = (
-      process.env.PAYMENT_PROVIDERS ||
-      process.env.PAYMENT_PROVIDER ||
-      "mock,clip"
-    )
-      .toUpperCase()
-      .split(",")
-      .map((p) => p.trim());
+    const statusRes = await getSaaSPlatformPaymentStatusAction();
+    if (!statusRes.success || !statusRes.data) {
+      return { success: false, error: statusRes.error ?? "Failed to read gateway status" };
+    }
 
-    const nameMap: Record<string, string> = {
-      MOCK: "Proveedor Simulado (Pruebas Locales)",
-      CLIP: "Clip (Hosted Checkout)",
-      STRIPE: "Stripe (Tarjeta / Internacional)",
-      MERCADOPAGO: "MercadoPago (LATAM)",
-      PSE: "PSE (Débito Bancario)",
-    };
-
-    const available = providersEnv
-      .filter((p) => ["MOCK", "CLIP", "STRIPE", "MERCADOPAGO", "PSE"].includes(p))
-      .map((p) => ({
-        provider: p as PaymentGatewayType,
-        name: nameMap[p] || p,
+    // Filter strictly to gateways that have API keys/credentials configured in process.env
+    const configuredGateways = statusRes.data
+      .filter((g) => g.isConfigured)
+      .map((g) => ({
+        provider: g.provider,
+        name: g.name,
       }));
 
-    return { success: true, data: available };
+    return { success: true, data: configuredGateways };
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Error fetching gateways";
     return { success: false, error: msg };
@@ -195,7 +184,12 @@ export async function saveBrandPaymentConfigAction(params: {
       : null;
 
     await prisma.brandPaymentConfig.upsert({
-      where: { brandId },
+      where: {
+        brandId_gatewayType: {
+          brandId,
+          gatewayType: gatewayType as PrismaPaymentGatewayType,
+        },
+      },
       update: {
         gatewayType: gatewayType as PrismaPaymentGatewayType,
         publicKey: publicKey.trim(),
@@ -251,6 +245,7 @@ export async function getBrandPaymentConfigsListAction(params?: {
   page?: number;
   limit?: number;
   search?: string;
+  brandId?: string;
 }): Promise<
   ApiResponse<{
     configs: BrandPaymentConfigItem[];
@@ -260,7 +255,6 @@ export async function getBrandPaymentConfigsListAction(params?: {
   }>
 > {
   try {
-
     const page = Math.max(1, params?.page ?? 1);
     const limit = Math.min(50, Math.max(1, params?.limit ?? 10));
     const skip = (page - 1) * limit;
@@ -275,22 +269,25 @@ export async function getBrandPaymentConfigsListAction(params?: {
       "MOCK",
     ].includes(searchUpper);
 
-    const where = search
-      ? {
-          OR: [
-            { brand: { name: { contains: search, mode: "insensitive" as const } } },
-            ...(isGatewayEnum
-              ? [
-                  {
-                    gatewayType: {
-                      equals: searchUpper as PrismaPaymentGatewayType,
+    const where = {
+      ...(params?.brandId && { brandId: params.brandId }),
+      ...(search
+        ? {
+            OR: [
+              { brand: { name: { contains: search, mode: "insensitive" as const } } },
+              ...(isGatewayEnum
+                ? [
+                    {
+                      gatewayType: {
+                        equals: searchUpper as PrismaPaymentGatewayType,
+                      },
                     },
-                  },
-                ]
-              : []),
-          ],
-        }
-      : {};
+                  ]
+                : []),
+            ],
+          }
+        : {}),
+    };
 
     const [total, rawConfigs] = await Promise.all([
       prisma.brandPaymentConfig.count({ where }),

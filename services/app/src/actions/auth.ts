@@ -10,8 +10,11 @@ import {
   updateProfileSchema,
   updateUserSchema,
 } from "@/lib/validations/auth";
-import { auth, extractClientIp, parseBrowser, parseDevice } from "@/auth";
+import { emailSchema, passwordSchema } from "@/lib/validations/common";
+import { auth, parseBrowser, parseDevice } from "@/auth";
 import type { ApiResponse, User } from "@/types";
+import { checkAndSyncBrandSubscriptionGracePeriod } from "@/actions/billing";
+import { createLocalizedNotification } from "@/lib/notifications";
 
 export interface UserWithRoles extends User {
   roles?: string[];
@@ -35,6 +38,10 @@ export async function getUserById(
 
     if (!rawUser) {
       return { success: false, error: "User not found." };
+    }
+
+    if (rawUser.brandId) {
+      await checkAndSyncBrandSubscriptionGracePeriod(rawUser.brandId, rawUser.id);
     }
 
     const isSuperAdmin = rawUser.roles.some((r) => r.role.name === "SUPER_ADMIN");
@@ -760,13 +767,10 @@ export async function recordLoginAuditAction(
       },
     });
 
-    await prisma.notification.create({
-      data: {
-        userId,
-        title: "Inicio de sesión registrado",
-        desc: `Acceso exitoso desde ${browser} (${device}) • IP ${ip}`,
-        type: "security",
-      },
+    await createLocalizedNotification({
+      userId,
+      type: "LOGIN_SUCCESS",
+      data: { browser, device, ip },
     });
 
     return { success: true, data: true };

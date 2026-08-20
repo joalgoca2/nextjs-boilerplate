@@ -5,6 +5,7 @@ export interface Brand {
   logoUrl?: string | null;
   defaultLocale: string;
   timezone: string;
+  currency: string;
   apiKey?: string | null;
   billingWebhookUrl?: string | null;
   generalWebhookUrl?: string | null;

@@ -284,6 +284,17 @@ export async function getBrandsList(): Promise<
 
 export interface BrandWithUsersCount extends Brand {
   usersCount: number;
+  subscription?: {
+    id?: string;
+    planName: string;
+    status: string;
+    billingCycle: string;
+    price: number;
+    discount: number;
+    finalPrice: number;
+    startDate: Date | string;
+    endDate: Date | string;
+  } | null;
 }
 
 export async function getBrandsCatalog(params?: {
@@ -323,21 +334,44 @@ export async function getBrandsCatalog(params?: {
           _count: {
             select: { users: true },
           },
+          subscriptions: {
+            where: { status: "ACTIVE" },
+            orderBy: { createdAt: "desc" },
+            take: 1,
+          },
         },
       }),
     ]);
 
-    const brands: BrandWithUsersCount[] = rawBrands.map((b) => ({
-      id: b.id,
-      name: b.name,
-      description: b.description,
-      logoUrl: b.logoUrl,
-      defaultLocale: b.defaultLocale,
-      timezone: b.timezone,
-      createdAt: b.createdAt,
-      updatedAt: b.updatedAt,
-      usersCount: b._count.users,
-    }));
+    const brands: BrandWithUsersCount[] = rawBrands.map((b) => {
+      const activeSub = b.subscriptions[0] ?? null;
+
+      return {
+        id: b.id,
+        name: b.name,
+        description: b.description,
+        logoUrl: b.logoUrl,
+        defaultLocale: b.defaultLocale,
+        timezone: b.timezone,
+        currency: b.currency,
+        createdAt: b.createdAt,
+        updatedAt: b.updatedAt,
+        usersCount: b._count.users,
+        subscription: activeSub
+          ? {
+              id: activeSub.id,
+              planName: activeSub.planName,
+              status: activeSub.status,
+              billingCycle: activeSub.billingCycle,
+              price: activeSub.price,
+              discount: activeSub.discount,
+              finalPrice: activeSub.finalPrice,
+              startDate: activeSub.startDate.toISOString(),
+              endDate: activeSub.endDate.toISOString(),
+            }
+          : null,
+      };
+    });
 
     return {
       success: true,
@@ -351,5 +385,316 @@ export async function getBrandsCatalog(params?: {
     const message =
       error instanceof Error ? error.message : "Failed to fetch brands catalog.";
     return { success: false, error: message };
+  }
+}
+
+export async function createBrandWithSubscriptionAction(data: {
+  name: string;
+  description?: string;
+  currency?: string;
+  planName?: string;
+  billingCycle?: string;
+  price?: number;
+  discount?: number;
+  startDate?: string;
+  endDate?: string;
+}): Promise<ApiResponse<Brand>> {
+  try {
+    const brand = await prisma.brand.create({
+      data: {
+        name: data.name,
+        description: data.description,
+        currency: data.currency || "USD",
+      },
+    });
+
+    if (data.planName) {
+      const price = data.price ?? 0;
+      const discount = data.discount ?? 0;
+      const finalPrice = Math.max(0, price * (1 - discount / 100));
+
+      await prisma.subscription.create({
+        data: {
+          brandId: brand.id,
+          planName: data.planName,
+          status: "ACTIVE",
+          billingCycle: data.billingCycle || "MONTHLY",
+          price,
+          discount,
+          finalPrice,
+          startDate: data.startDate ? new Date(data.startDate) : new Date(),
+          endDate: data.endDate
+            ? new Date(data.endDate)
+            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
+    return { success: true, data: brand };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Error creating brand.";
+    return { success: false, error: msg };
+  }
+}
+
+export async function updateBrandWithSubscriptionAction(
+  brandId: string,
+  data: {
+    name?: string;
+    description?: string;
+    currency?: string;
+    planName?: string;
+    billingCycle?: string;
+    price?: number;
+    discount?: number;
+    startDate?: string;
+    endDate?: string;
+  }
+): Promise<ApiResponse<Brand>> {
+  try {
+    const brand = await prisma.brand.update({
+      where: { id: brandId },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.currency && { currency: data.currency }),
+      },
+    });
+
+    if (data.planName) {
+      const price = data.price ?? 0;
+      const discount = data.discount ?? 0;
+      const finalPrice = Math.max(0, price * (1 - discount / 100));
+
+      // Deactivate all prior active subscriptions for this brand
+      await prisma.subscription.updateMany({
+        where: { brandId, status: "ACTIVE" },
+        data: { status: "CANCELED" },
+      });
+
+      // Create new active subscription directly for the brand
+      await prisma.subscription.create({
+        data: {
+          brandId,
+          planName: data.planName,
+          status: "ACTIVE",
+          billingCycle: data.billingCycle || "MONTHLY",
+          price,
+          discount,
+          finalPrice,
+          startDate: data.startDate ? new Date(data.startDate) : new Date(),
+          endDate: data.endDate
+            ? new Date(data.endDate)
+            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+    }
+
+    return { success: true, data: brand };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Error updating brand.";
+    return { success: false, error: msg };
+  }
+}
+
+export async function getBrandPaymentsHistoryAction(brandId: string): Promise<
+  ApiResponse<{
+    subscription: {
+      planName: string;
+      status: string;
+      billingCycle: string;
+      price: number;
+      discount: number;
+      finalPrice: number;
+      startDate: string;
+      endDate: string;
+    } | null;
+    payments: Array<{
+      id: string;
+      amount: number;
+      discountApplied: number;
+      paymentDate: string;
+      status: string;
+      notes: string | null;
+      billingPeriodStart: string;
+      billingPeriodEnd: string;
+    }>;
+  }>
+> {
+  try {
+    const brand = await prisma.brand.findUnique({
+      where: { id: brandId },
+      include: {
+        subscriptions: {
+          where: { status: "ACTIVE" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        },
+        payments: {
+          orderBy: { paymentDate: "desc" },
+          take: 20,
+        },
+      },
+    });
+
+    if (!brand) {
+      return {
+        success: true,
+        data: { subscription: null, payments: [] },
+      };
+    }
+
+    const activeSub = brand.subscriptions[0] ?? null;
+
+    return {
+      success: true,
+      data: {
+        subscription: activeSub
+          ? {
+              planName: activeSub.planName,
+              status: activeSub.status,
+              billingCycle: activeSub.billingCycle,
+              price: activeSub.price,
+              discount: activeSub.discount,
+              finalPrice: activeSub.finalPrice,
+              startDate: activeSub.startDate.toISOString(),
+              endDate: activeSub.endDate.toISOString(),
+            }
+          : null,
+        payments: brand.payments.map((p) => ({
+          id: p.id,
+          amount: p.amount,
+          discountApplied: p.discountApplied,
+          paymentDate: p.paymentDate.toISOString(),
+          status: p.status,
+          notes: p.notes,
+          billingPeriodStart: p.billingPeriodStart.toISOString(),
+          billingPeriodEnd: p.billingPeriodEnd.toISOString(),
+        })),
+      },
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Error fetching payments history.";
+    return { success: false, error: msg };
+  }
+}
+
+export async function addManualBrandPaymentAction(params: {
+  brandId: string;
+  amount: number;
+  discountApplied?: number;
+  status?: string;
+  paymentDate?: string;
+  billingPeriodStart?: string;
+  billingPeriodEnd?: string;
+  notes?: string;
+}): Promise<ApiResponse<boolean>> {
+  try {
+    const paymentDate = params.paymentDate ? new Date(params.paymentDate) : new Date();
+    const periodStart = params.billingPeriodStart
+      ? new Date(params.billingPeriodStart)
+      : new Date();
+    const periodEnd = params.billingPeriodEnd
+      ? new Date(params.billingPeriodEnd)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    await prisma.payment.create({
+      data: {
+        brandId: params.brandId,
+        amount: params.amount,
+        discountApplied: params.discountApplied ?? 0,
+        paymentDate,
+        status: params.status || "SUCCESS",
+        billingPeriodStart: periodStart,
+        billingPeriodEnd: periodEnd,
+        notes: params.notes || null,
+      },
+    });
+
+    // Update active subscription period end date
+    const activeSub = await prisma.subscription.findFirst({
+      where: { brandId: params.brandId, status: "ACTIVE" },
+    });
+
+    if (activeSub) {
+      await prisma.subscription.update({
+        where: { id: activeSub.id },
+        data: { endDate: periodEnd },
+      });
+    }
+
+    return { success: true, data: true };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Error adding manual payment.";
+    return { success: false, error: msg };
+  }
+}
+
+export async function getBrandPaginatedPaymentsAction(params: {
+  brandId: string;
+  page?: number;
+  limit?: number;
+}): Promise<
+  ApiResponse<{
+    payments: Array<{
+      id: string;
+      amount: number;
+      discountApplied: number;
+      paymentDate: string;
+      status: string;
+      gatewayProvider: string | null;
+      trackingId: string | null;
+      rawGatewayStatus: string | null;
+      notes: string | null;
+      billingPeriodStart: string;
+      billingPeriodEnd: string;
+    }>;
+    total: number;
+    page: number;
+    totalPages: number;
+  }>
+> {
+  try {
+    const page = Math.max(1, params.page ?? 1);
+    const limit = Math.max(1, Math.min(50, params.limit ?? 10));
+    const skip = (page - 1) * limit;
+
+    const [total, rawPayments] = await Promise.all([
+      prisma.payment.count({ where: { brandId: params.brandId } }),
+      prisma.payment.findMany({
+        where: { brandId: params.brandId },
+        skip,
+        take: limit,
+        orderBy: { paymentDate: "desc" },
+      }),
+    ]);
+
+    const payments = rawPayments.map((p) => ({
+      id: p.id,
+      amount: p.amount,
+      discountApplied: p.discountApplied,
+      paymentDate: p.paymentDate.toISOString(),
+      status: p.status,
+      gatewayProvider: p.gatewayProvider ?? "MOCK",
+      trackingId: p.trackingId ?? null,
+      rawGatewayStatus: p.rawGatewayStatus ?? "APPROVED",
+      notes: p.notes,
+      billingPeriodStart: p.billingPeriodStart.toISOString(),
+      billingPeriodEnd: p.billingPeriodEnd.toISOString(),
+    }));
+
+    return {
+      success: true,
+      data: {
+        payments,
+        total,
+        page,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+      },
+    };
+  } catch (error: unknown) {
+    const msg =
+      error instanceof Error ? error.message : "Error fetching brand payments.";
+    return { success: false, error: msg };
   }
 }

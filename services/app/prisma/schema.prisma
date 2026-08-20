@@ -171,25 +171,28 @@ model RateLimit {
 // --- MULTITENANCY / BRAND ---
 
 model Brand {
-  id                 String   @id @default(cuid())
-  name               String   @unique
-  description        String?  @db.Text
-  logoUrl            String?  @db.Text
-  defaultLocale      String   @default("es")
-  timezone           String   @default("UTC")
+  id                  String   @id @default(cuid())
+  name                String   @unique
+  description         String?  @db.Text
+  logoUrl             String?  @db.Text
+  defaultLocale       String   @default("es")
+  timezone            String   @default("UTC")
+  currency            String   @default("USD")
 
-  apiKey             String?  @unique
-  billingWebhookUrl  String?  @db.Text
-  generalWebhookUrl  String?  @db.Text
-  isWebhookEnabled   Boolean  @default(true)
+  apiKey              String?  @unique
+  billingWebhookUrl   String?  @db.Text
+  generalWebhookUrl   String?  @db.Text
+  isWebhookEnabled    Boolean  @default(true)
 
-  users              User[]
-  webhookLogs        WebhookLog[]
-  paymentConfig      BrandPaymentConfig?
+  users               User[]
+  subscriptions       Subscription[]
+  payments            Payment[]
+  webhookLogs         WebhookLog[]
+  paymentConfigs      BrandPaymentConfig[]
   paymentTransactions PaymentTransaction[]
 
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 
   @@map("brands")
 }
@@ -198,8 +201,12 @@ model Brand {
 
 model Subscription {
   id            String   @id @default(cuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  brandId       String
+  brand         Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  userId        String?
+  user          User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   planName      String   @default("Free")
   status        String   @default("ACTIVE")
@@ -212,27 +219,43 @@ model Subscription {
   discount      Float    @default(0)
   finalPrice    Float
 
+  scheduledPlanName String?  @map("scheduled_plan_name")
+  cancelAtPeriodEnd Boolean  @default(false) @map("cancel_at_period_end")
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  @@index([brandId])
   @@index([userId])
   @@map("subscriptions")
 }
 
 model Payment {
   id                 String   @id @default(cuid())
-  userId             String
-  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  brandId            String
+  brand              Brand    @relation(fields: [brandId], references: [id], onDelete: Cascade)
+
+  userId             String?
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   amount             Float
   discountApplied    Float    @default(0)
   paymentDate        DateTime @default(now())
   status             String   @default("SUCCESS")
 
+  gatewayProvider    String?  @default("MOCK") @map("gateway_provider")
+  trackingId         String?  @map("tracking_id")
+  rawGatewayStatus   String?  @default("APPROVED") @map("raw_gateway_status")
+
   billingPeriodStart DateTime
   billingPeriodEnd   DateTime
   notes              String?  @db.Text
 
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([brandId])
   @@index([userId])
   @@map("payments")
 }
@@ -323,7 +346,7 @@ enum PaymentGatewayType {
 
 model BrandPaymentConfig {
   id                 String             @id @default(cuid())
-  brandId            String             @unique @map("brand_id")
+  brandId            String             @map("brand_id")
   brand              Brand              @relation(fields: [brandId], references: [id], onDelete: Cascade)
   gatewayType        PaymentGatewayType @default(CLIP) @map("gateway_type")
   publicKey          String             @map("public_key")
@@ -333,6 +356,8 @@ model BrandPaymentConfig {
   createdAt          DateTime           @default(now()) @map("created_at")
   updatedAt          DateTime           @updatedAt @map("updated_at")
 
+  @@unique([brandId, gatewayType])
+  @@index([brandId])
   @@map("brand_payment_configs")
 }
 

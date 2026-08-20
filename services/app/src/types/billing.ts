@@ -1,6 +1,7 @@
 export interface Subscription {
   id: string;
-  userId: string;
+  brandId: string;
+  userId?: string | null;
   planName: string;
   status: "ACTIVE" | "PAST_DUE" | "CANCELED" | string;
   billingCycle: "MONTHLY" | "YEARLY" | string;
@@ -9,17 +10,23 @@ export interface Subscription {
   price: number;
   discount: number;
   finalPrice: number;
+  scheduledPlanName?: string | null;
+  cancelAtPeriodEnd?: boolean;
   createdAt?: string | Date;
   updatedAt?: string | Date;
 }
 
 export interface Payment {
   id: string;
-  userId: string;
+  brandId: string;
+  userId?: string | null;
   amount: number;
   discountApplied: number;
   paymentDate: string | Date;
   status: "SUCCESS" | "FAILED" | "PENDING" | string;
+  gatewayProvider?: string | null;
+  trackingId?: string | null;
+  rawGatewayStatus?: string | null;
   billingPeriodStart: string | Date;
   billingPeriodEnd: string | Date;
   notes?: string | null;

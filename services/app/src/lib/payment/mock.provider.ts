@@ -12,7 +12,8 @@ export class MockProvider implements PaymentProvider {
     options: CheckoutSessionOptions
   ): Promise<CheckoutSessionResult> {
     const mockSessionId = `mock_sess_${Date.now()}`;
-    const checkoutUrl = `${options.successUrl}?mock_session_id=${mockSessionId}&plan=${encodeURIComponent(options.planName)}`;
+    const separator = options.successUrl.includes("?") ? "&" : "?";
+    const checkoutUrl = `${options.successUrl}${separator}mock_session_id=${mockSessionId}`;
 
     return {
       sessionId: mockSessionId,

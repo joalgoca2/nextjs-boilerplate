@@ -1,5 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import * as bcrypt from "bcryptjs";
+import { encryptSecret } from "../src/lib/crypto";
 
 const prisma = new PrismaClient();
 
@@ -195,18 +196,21 @@ async function main() {
 
   await prisma.subscription.upsert({
     where: { id: "sub-admin-test" },
-    update: {},
+    update: {
+      brandId: generalBrand.id,
+    },
     create: {
       id: "sub-admin-test",
-      userId: adminUser.id,
-      planName: "Pro Test",
+      brandId: generalBrand.id,
+      userId: brandAdminUser.id,
+      planName: "Pro",
       status: "ACTIVE",
       billingCycle: "YEARLY",
       startDate: new Date(),
       endDate: oneYearFromNow,
-      price: 0,
+      price: 29,
       discount: 0,
-      finalPrice: 0,
+      finalPrice: 29,
     },
   });
 
@@ -262,11 +266,13 @@ async function main() {
     await prisma.subscription.upsert({
       where: { id: "sub-brand-admin-pro" },
       update: {
+        brandId: generalBrand.id,
         planName: proPlan.planName,
         status: "ACTIVE",
       },
       create: {
         id: "sub-brand-admin-pro",
+        brandId: generalBrand.id,
         userId: brandAdminUser.id,
         planName: proPlan.planName,
         status: "ACTIVE",
@@ -352,6 +358,30 @@ async function main() {
       create: r,
     });
   }
+
+  // 8. Seed Payment Gateway Configuration for General Brand
+  console.log("  -> Seeding Payment Gateway Config for General Brand (Clip)...");
+  await prisma.brandPaymentConfig.upsert({
+    where: {
+      brandId_gatewayType: {
+        brandId: generalBrand.id,
+        gatewayType: "CLIP",
+      },
+    },
+    update: {
+      gatewayType: "CLIP",
+      publicKey: "test_clip_pk_general_brand_12345",
+      encryptedSecretKey: encryptSecret("test_clip_sk_general_brand_67890"),
+      isActive: true,
+    },
+    create: {
+      brandId: generalBrand.id,
+      gatewayType: "CLIP",
+      publicKey: "test_clip_pk_general_brand_12345",
+      encryptedSecretKey: encryptSecret("test_clip_sk_general_brand_67890"),
+      isActive: true,
+    },
+  });
 
   console.log("✅ Database seeding finished cleanly with 100% Upserts.");
 }

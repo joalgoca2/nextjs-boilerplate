@@ -3,6 +3,7 @@
 import { toUtcDate } from "@/lib/date";
 import { getPaymentProvider } from "@/lib/payment";
 import { prisma } from "@/lib/prisma";
+import { createLocalizedNotification } from "@/lib/notifications";
 import { triggerOutboundWebhook } from "@/lib/webhook";
 import {
   exchangeRateSchema,
@@ -183,18 +184,136 @@ export async function deletePlanConfig(id: string): Promise<ApiResponse<null>> {
   }
 }
 
+export async function checkAndSyncBrandSubscriptionGracePeriod(
+  brandId: string,
+  userId?: string
+): Promise<void> {
+  try {
+    const now = new Date();
+
+    const sub = await prisma.subscription.findFirst({
+      where: {
+        brandId,
+        status: { in: ["ACTIVE", "PAST_DUE"] },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!sub) return;
+
+    if (
+      sub.planName.toLowerCase() === "free" ||
+      sub.planName.toLowerCase().includes("gratuito")
+    ) {
+      return;
+    }
+
+    const endDate = new Date(sub.endDate);
+    const GRACE_PERIOD_DAYS = 5;
+    const graceEndDate = new Date(
+      endDate.getTime() + GRACE_PERIOD_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    // CASE A: Expired beyond 5 days grace period -> Downgrade to FREE
+    if (now > graceEndDate) {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { status: "CANCELED" },
+      });
+
+      const targetPlanName = sub.scheduledPlanName || "Free";
+
+      await prisma.subscription.create({
+        data: {
+          brandId,
+          userId: userId || sub.userId || null,
+          planName: targetPlanName,
+          status: "ACTIVE",
+          billingCycle: "MONTHLY",
+          price: 0,
+          discount: 0,
+          finalPrice: 0,
+          startDate: now,
+          endDate: new Date(now.getTime() + 365 * 24 * 60 * 60 * 1000),
+        },
+      });
+
+      const targetUserId = userId || sub.userId;
+      if (targetUserId) {
+        await createLocalizedNotification({
+          userId: targetUserId,
+          type: "SUBSCRIPTION_EXPIRED_DOWNGRADE_FREE",
+          data: { plan: targetPlanName },
+        });
+      }
+    }
+    // CASE B: Between expiration and 5 days grace period -> Mark PAST_DUE & Notify
+    else if (now > endDate && sub.status !== "PAST_DUE") {
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: { status: "PAST_DUE" },
+      });
+
+      const targetUserId = userId || sub.userId;
+      if (targetUserId) {
+        await createLocalizedNotification({
+          userId: targetUserId,
+          type: "SUBSCRIPTION_PAST_DUE_WARNING",
+        });
+      }
+    }
+    // CASE C: Active and about to expire in less than 3 days -> Pre-warning Notification
+    else if (now <= endDate) {
+      const daysUntilExpiration =
+        (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
+      if (daysUntilExpiration <= 3) {
+        const targetUserId = userId || sub.userId;
+        if (targetUserId) {
+          const existingNotif = await prisma.notification.findFirst({
+            where: {
+              userId: targetUserId,
+              type: "SUBSCRIPTION_EXPIRING_SOON",
+              createdAt: {
+                gte: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+              },
+            },
+          });
+
+          if (!existingNotif) {
+            await createLocalizedNotification({
+              userId: targetUserId,
+              type: "SUBSCRIPTION_EXPIRING_SOON",
+              data: {
+                planName: sub.planName,
+                endDate: new Date(sub.endDate).toLocaleDateString("es-ES"),
+              },
+            });
+          }
+        }
+      }
+    }
+  } catch (_err) {
+    // Ignore errors so app execution is never blocked
+  }
+}
+
 export async function getBrandActiveSubscriptionAction(
-  brandId: string
+  brandId: string,
+  userId?: string
 ): Promise<
   ApiResponse<{
     planName: string;
     status: string;
     endDate?: string | null;
+    scheduledPlanName?: string | null;
+    cancelAtPeriodEnd?: boolean;
   } | null>
 > {
   try {
+    await checkAndSyncBrandSubscriptionGracePeriod(brandId, userId);
+
     const sub = await prisma.subscription.findFirst({
-      where: { user: { brandId }, status: "ACTIVE" },
+      where: { brandId, status: { in: ["ACTIVE", "PAST_DUE"] } },
       orderBy: { createdAt: "desc" },
     });
 
@@ -211,6 +330,8 @@ export async function getBrandActiveSubscriptionAction(
         planName: sub.planName,
         status: sub.status,
         endDate: sub.endDate ? sub.endDate.toISOString() : null,
+        scheduledPlanName: sub.scheduledPlanName,
+        cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
       },
     };
   } catch (error: unknown) {
@@ -224,39 +345,199 @@ export async function switchBrandSubscriptionPlanAction(params: {
   userId: string;
   brandId: string;
   newPlanName: string;
+  billingCycle?: "MONTHLY" | "YEARLY" | string;
+  gatewayProvider?: string;
+  trackingId?: string;
+  rawGatewayStatus?: string;
+  notes?: string;
 }): Promise<ApiResponse<boolean>> {
   try {
-    const plan = await prisma.planConfig.findFirst({
-      where: { planName: params.newPlanName, isActive: true },
+    const trimmedName = params.newPlanName.split("?")[0].split("&")[0].trim();
+    let plan = await prisma.planConfig.findFirst({
+      where: {
+        planName: {
+          equals: trimmedName,
+          mode: "insensitive",
+        },
+      },
     });
 
     if (!plan) {
-      return { success: false, error: "El plan seleccionado no existe." };
+      // Fallback: try searching contains or create default plan if db seed wasn't run
+      plan = await prisma.planConfig.findFirst({
+        where: {
+          planName: {
+            contains: trimmedName,
+            mode: "insensitive",
+          },
+        },
+      });
     }
 
-    // Cancel prior active subscriptions for this brand
+    const effectivePlanName = plan?.planName ?? trimmedName;
+    const cycle = (params.billingCycle || "MONTHLY").toUpperCase();
+    const isYearly = cycle === "YEARLY";
+
+    const effectivePrice = isYearly
+      ? plan?.priceYearly ?? ((plan?.priceMonthly ?? 19) * 10)
+      : plan?.priceMonthly ?? (trimmedName.toLowerCase().includes("pro") ? 19 : 99);
+
+    // Get current active subscription for the brand
+    const currentSub = await prisma.subscription.findFirst({
+      where: { brandId: params.brandId, status: "ACTIVE" },
+      orderBy: { createdAt: "desc" },
+    });
+
+    const isDowngrade = currentSub && effectivePrice < currentSub.price && currentSub.endDate > new Date();
+
+    if (isDowngrade) {
+      // Schedule Downgrade at Period End
+      await prisma.subscription.update({
+        where: { id: currentSub.id },
+        data: {
+          scheduledPlanName: effectivePlanName,
+          cancelAtPeriodEnd: true,
+        },
+      });      // Create Notification for User
+      if (params.userId) {
+        await createLocalizedNotification({
+          userId: params.userId,
+          type: "PLAN_DOWNGRADE_SCHEDULED",
+          data: {
+            targetPlan: effectivePlanName,
+            endDate: currentSub.endDate
+              ? new Date(currentSub.endDate).toLocaleDateString("es-ES")
+              : "final del período",
+          },
+        });
+      }
+
+      return {
+        success: true,
+        data: true,
+        message: `Cambio a ${effectivePlanName} programado exitosamente. Mantendrás tu plan ${currentSub.planName} hasta su fecha de vencimiento.`,
+      };
+    }
+
+    // Immediate Upgrade / Plan Switch: cancel prior active subscriptions
     await prisma.subscription.updateMany({
-      where: { user: { brandId: params.brandId }, status: "ACTIVE" },
+      where: { brandId: params.brandId, status: "ACTIVE" },
       data: { status: "CANCELED" },
     });
 
-    // Create new active subscription
+    const periodStart = new Date();
+    const periodEnd = isYearly
+      ? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    // Create new active subscription directly for the brand
     await prisma.subscription.create({
       data: {
-        userId: params.userId,
-        planName: plan.planName,
+        brandId: params.brandId,
+        userId: params.userId || null,
+        planName: effectivePlanName,
         status: "ACTIVE",
-        billingCycle: "MONTHLY",
-        price: plan.priceMonthly,
-        discount: 0,
-        finalPrice: plan.priceMonthly,
-        startDate: new Date(),
+        billingCycle: cycle,
+        price: effectivePrice,
+        discount: isYearly ? 20 : 0,
+        finalPrice: effectivePrice,
+        startDate: periodStart,
+        endDate: periodEnd,
       },
     });
+
+    // Record Payment transaction in database
+    const providerName = params.gatewayProvider || "MOCK";
+    const trackingIdVal = params.trackingId || `mock_sess_${Date.now()}`;
+    const rawStatusVal = params.rawGatewayStatus || "APPROVED";
+
+    await prisma.payment.create({
+      data: {
+        brandId: params.brandId,
+        userId: params.userId || null,
+        amount: effectivePrice,
+        discountApplied: 0,
+        paymentDate: periodStart,
+        status:
+          rawStatusVal === "APPROVED" ||
+          rawStatusVal === "CHARGED" ||
+          rawStatusVal === "SUCCESS"
+            ? "SUCCESS"
+            : "FAILED",
+        gatewayProvider: providerName,
+        trackingId: trackingIdVal,
+        rawGatewayStatus: rawStatusVal,
+        billingPeriodStart: periodStart,
+        billingPeriodEnd: periodEnd,
+        notes:
+          params.notes ||
+          `Cobro automático de suscripción al plan ${effectivePlanName} vía ${providerName}`,
+      },
+    });
+
+    // Create Notification for Payment & Upgrade
+    if (params.userId) {
+      await createLocalizedNotification({
+        userId: params.userId,
+        type: "PAYMENT_SUCCESS",
+        data: {
+          amount: effectivePrice.toFixed(2),
+          provider: providerName,
+          plan: effectivePlanName,
+        },
+      });
+    }
 
     return { success: true, data: true };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : "Error al cambiar el plan.";
+    return { success: false, error: msg };
+  }
+}
+
+export async function cancelScheduledBrandDowngradeAction(params: {
+  userId: string;
+  brandId: string;
+}): Promise<ApiResponse<boolean>> {
+  try {
+    const activeSub = await prisma.subscription.findFirst({
+      where: { brandId: params.brandId, status: "ACTIVE", cancelAtPeriodEnd: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    if (!activeSub) {
+      return { success: false, error: "No hay un cambio de plan programado para cancelar." };
+    }
+
+    const previousScheduled = activeSub.scheduledPlanName;
+
+    await prisma.subscription.update({
+      where: { id: activeSub.id },
+      data: {
+        scheduledPlanName: null,
+        cancelAtPeriodEnd: false,
+      },
+    });
+
+    // Create Notification for User
+    if (params.userId) {
+      await createLocalizedNotification({
+        userId: params.userId,
+        type: "PLAN_DOWNGRADE_CANCELED",
+        data: {
+          previousPlan: previousScheduled || "",
+          plan: activeSub.planName,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      data: true,
+      message: `Se ha cancelado la reducción programada. Continuarás en el plan ${activeSub.planName}.`,
+    };
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : "Error al cancelar el cambio de plan.";
     return { success: false, error: msg };
   }
 }
@@ -311,8 +592,21 @@ export async function createSubscription(
       };
     }
 
+    const userObj = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { brandId: true },
+    });
+
+    if (!userObj?.brandId) {
+      return {
+        success: false,
+        error: "El usuario debe pertenecer a una marca/empresa.",
+      };
+    }
+
     const subscription = await prisma.subscription.create({
       data: {
+        brandId: userObj.brandId,
         userId,
         planName,
         status,
@@ -439,8 +733,21 @@ export async function createPayment(
       };
     }
 
+    const userObj = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { brandId: true },
+    });
+
+    if (!userObj?.brandId) {
+      return {
+        success: false,
+        error: "El usuario debe pertenecer a una marca/empresa.",
+      };
+    }
+
     const payment = await prisma.payment.create({
       data: {
+        brandId: userObj.brandId,
         userId,
         amount,
         discountApplied,

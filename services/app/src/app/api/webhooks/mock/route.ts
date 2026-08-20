@@ -48,6 +48,15 @@ export async function POST(req: Request) {
       );
     }
 
+    const targetBrandId = targetUser.brandId ?? (await prisma.brand.findFirst())?.id;
+
+    if (!targetBrandId) {
+      return NextResponse.json(
+        { success: false, error: "No existe una marca en el sistema para asociar la suscripción." },
+        { status: 400 }
+      );
+    }
+
     const validUserId = targetUser.id;
     const utcStart = toUtcDate(startDate) ?? new Date();
     const utcEnd = toUtcDate(endDate) ?? new Date();
@@ -55,6 +64,7 @@ export async function POST(req: Request) {
     // Create subscription
     const subscription = await prisma.subscription.create({
       data: {
+        brandId: targetBrandId,
         userId: validUserId,
         planName,
         status: "ACTIVE",
@@ -70,6 +80,7 @@ export async function POST(req: Request) {
     // Create payment record
     const payment = await prisma.payment.create({
       data: {
+        brandId: targetBrandId,
         userId: validUserId,
         amount,
         discountApplied: 0,

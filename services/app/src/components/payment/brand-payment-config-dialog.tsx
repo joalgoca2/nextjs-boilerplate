@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { CreditCard, Key, ShieldCheck, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 
 interface BrandItem {
   id: string;
@@ -29,7 +30,8 @@ interface BrandPaymentConfigDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  brands: BrandItem[];
+  brands?: BrandItem[];
+  brandId?: string;
   initialBrandId?: string;
   isSuperAdmin?: boolean;
 }
@@ -38,15 +40,17 @@ export function BrandPaymentConfigDialog({
   isOpen,
   onClose,
   onSuccess,
-  brands,
+  brands = [],
+  brandId: directBrandId,
   initialBrandId,
   isSuperAdmin = false,
 }: BrandPaymentConfigDialogProps) {
   const { t } = useTranslation();
 
-  const tenantBrands = brands;
+  const tenantBrands = brands || [];
 
-  const [brandId, setBrandId] = useState<string>(initialBrandId || "");
+  const targetBrandId = directBrandId || initialBrandId || tenantBrands[0]?.id || "";
+  const [brandId, setBrandId] = useState<string>(targetBrandId);
   const [gatewayType, setGatewayType] = useState<PaymentGatewayType>("CLIP");
   const [publicKey, setPublicKey] = useState<string>("");
   const [secretKey, setSecretKey] = useState<string>("");
@@ -57,7 +61,7 @@ export function BrandPaymentConfigDialog({
   useEffect(() => {
     if (!isOpen) return;
 
-    const currentBrandId = initialBrandId || brandId || tenantBrands[0]?.id;
+    const currentBrandId = directBrandId || initialBrandId || brandId || tenantBrands[0]?.id;
     if (currentBrandId) {
       setBrandId(currentBrandId);
       getBrandPaymentConfigAction(currentBrandId).then((res) => {
@@ -74,7 +78,7 @@ export function BrandPaymentConfigDialog({
         }
       });
     }
-  }, [isOpen, initialBrandId, tenantBrands]);
+  }, [isOpen, directBrandId, initialBrandId, brandId, tenantBrands]);
 
   if (!isOpen) return null;
 
@@ -159,119 +163,140 @@ export function BrandPaymentConfigDialog({
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Select Brand */}
-          <div className="space-y-1.5">
-            <Label className="text-xs font-semibold">
-              {t("paymentEngineDetails.selectBrandLabel", "Selecciona la Empresa Cliente (Brand)")}
-            </Label>
-            <Select value={brandId} onValueChange={setBrandId}>
-              <SelectTrigger className="rounded-xl h-10 text-xs font-semibold">
-                <SelectValue
-                  placeholder={t(
-                    "paymentEngineDetails.selectBrandPlaceholder",
-                    "Selecciona una marca..."
-                  )}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {tenantBrands.length === 0 ? (
-                  <SelectItem value="none" disabled className="text-xs">
-                    {t("paymentEngineDetails.noBrandsFound", "No hay marcas registradas")}
-                  </SelectItem>
-                ) : (
-                  tenantBrands.map((b) => (
-                    <SelectItem key={b.id} value={b.id} className="text-xs font-semibold">
-                      {b.name}
+          {/* Select Brand (Only for SuperAdmin) */}
+          {isSuperAdmin && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">
+                {t("paymentEngineDetails.selectBrandLabel", "Selecciona la Empresa Cliente (Brand)")}
+              </Label>
+              <Select value={brandId} onValueChange={setBrandId}>
+                <SelectTrigger className="rounded-xl h-10 text-xs font-semibold">
+                  <SelectValue
+                    placeholder={t(
+                      "paymentEngineDetails.selectBrandPlaceholder",
+                      "Selecciona una marca..."
+                    )}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {tenantBrands.length === 0 ? (
+                    <SelectItem value="none" disabled className="text-xs">
+                      {t("paymentEngineDetails.noBrandsFound", "No hay marcas registradas")}
                     </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+                  ) : (
+                    tenantBrands.map((b) => (
+                      <SelectItem key={b.id} value={b.id} className="text-xs font-semibold">
+                        {b.name}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Select Gateway */}
           <div className="space-y-1.5">
             <Label className="text-xs font-semibold">
               {t("paymentEngineDetails.selectProviderLabel", "Proveedor de Pago Autorizado")}
             </Label>
-            <Select
-              value={gatewayType}
-              onValueChange={(val) => setGatewayType(val as PaymentGatewayType)}
-            >
-              <SelectTrigger className="rounded-xl h-10 text-xs font-bold">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="CLIP" className="text-xs font-bold">
-                  Clip (Hosted Checkout)
-                </SelectItem>
-                <SelectItem value="STRIPE" className="text-xs font-bold">
-                  Stripe (Global Checkout)
-                </SelectItem>
-                <SelectItem value="MERCADOPAGO" className="text-xs font-bold">
-                  MercadoPago (LATAM)
-                </SelectItem>
-                <SelectItem value="PSE" className="text-xs font-bold">
-                  PSE (Débito Bancario)
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            {isSuperAdmin ? (
+              <Select
+                value={gatewayType}
+                onValueChange={(val) => setGatewayType(val as PaymentGatewayType)}
+              >
+                <SelectTrigger className="rounded-xl h-10 text-xs font-bold">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="CLIP" className="text-xs font-bold">
+                    Clip (Hosted Checkout)
+                  </SelectItem>
+                  <SelectItem value="STRIPE" className="text-xs font-bold">
+                    Stripe (Global Checkout)
+                  </SelectItem>
+                  <SelectItem value="MERCADOPAGO" className="text-xs font-bold">
+                    MercadoPago (LATAM)
+                  </SelectItem>
+                  <SelectItem value="PSE" className="text-xs font-bold">
+                    PSE (Débito Bancario)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <div className="flex items-center gap-2 p-3 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+                <Badge
+                  variant="outline"
+                  className="text-[11px] font-black uppercase px-2.5 py-0.5 rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                >
+                  {gatewayType}
+                </Badge>
+                <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                  {gatewayType === "CLIP"
+                    ? "Clip (Hosted Checkout)"
+                    : gatewayType === "STRIPE"
+                    ? "Stripe (Global Checkout)"
+                    : gatewayType === "MERCADOPAGO"
+                    ? "MercadoPago (LATAM)"
+                    : gatewayType === "PSE"
+                    ? "PSE (Débito Bancario)"
+                    : gatewayType}
+                </span>
+              </div>
+            )}
           </div>
 
-          {/* Key fields shown ONLY to Brand Admin (not SuperAdmin) */}
-          {!isSuperAdmin && (
-            <>
-              {/* Public Key */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">
-                  {t("paymentEngineDetails.saasPublicKeyLabel", "API Key Pública:")}
-                </Label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
-                  <Input
-                    type="text"
-                    placeholder="cl_pub_live_••••••••"
-                    value={publicKey}
-                    onChange={(e) => setPublicKey(e.target.value)}
-                    className="pl-9 text-xs font-mono rounded-xl h-10"
-                    required
-                  />
-                </div>
-              </div>
-
-              {/* Secret Key */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">
-                  {t("paymentEngineDetails.saasSecretKeyLabel", "Secret Key Privada:")}
-                </Label>
+          <>
+            {/* Public Key */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">
+                {t("paymentEngineDetails.saasPublicKeyLabel", "API Key Pública:")}
+              </Label>
+              <div className="relative">
+                <Key className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
                 <Input
-                  type="password"
-                  placeholder="cl_sec_live_••••••••"
-                  value={secretKey}
-                  onChange={(e) => setSecretKey(e.target.value)}
-                  className="text-xs font-mono rounded-xl h-10"
+                  type="text"
+                  placeholder="test_clip_pk_••••••••"
+                  value={publicKey}
+                  onChange={(e) => setPublicKey(e.target.value)}
+                  className="pl-9 text-xs font-mono rounded-xl h-10"
                   required
                 />
               </div>
+            </div>
 
-              {/* Webhook Secret */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">
-                  {t("paymentEngineDetails.saasWebhookSecretLabel", "Firma Webhook:")}
-                </Label>
-                <div className="relative">
-                  <ShieldCheck className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
-                  <Input
-                    type="password"
-                    placeholder="whsec_••••••••"
-                    value={webhookSecret}
-                    onChange={(e) => setWebhookSecret(e.target.value)}
-                    className="pl-9 text-xs font-mono rounded-xl h-10"
-                  />
-                </div>
+            {/* Secret Key */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">
+                {t("paymentEngineDetails.saasSecretKeyLabel", "Secret Key Privada:")}
+              </Label>
+              <Input
+                type="password"
+                placeholder="cl_sec_live_••••••••"
+                value={secretKey}
+                onChange={(e) => setSecretKey(e.target.value)}
+                className="text-xs font-mono rounded-xl h-10"
+                required
+              />
+            </div>
+
+            {/* Webhook Secret */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">
+                {t("paymentEngineDetails.saasWebhookSecretLabel", "Firma Webhook:")}
+              </Label>
+              <div className="relative">
+                <ShieldCheck className="absolute left-3 top-3 w-4 h-4 text-zinc-400" />
+                <Input
+                  type="password"
+                  placeholder="whsec_••••••••"
+                  value={webhookSecret}
+                  onChange={(e) => setWebhookSecret(e.target.value)}
+                  className="pl-9 text-xs font-mono rounded-xl h-10"
+                />
               </div>
-            </>
-          )}
+            </div>
+          </>
 
           {/* Active Switch */}
           <div className="flex items-center justify-between p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950/40">
@@ -298,7 +323,7 @@ export function BrandPaymentConfigDialog({
             </Button>
             <Button
               type="submit"
-              disabled={loading || tenantBrands.length === 0}
+              disabled={loading || (isSuperAdmin && tenantBrands.length === 0)}
               className="text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl h-10 px-4 gap-2"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}

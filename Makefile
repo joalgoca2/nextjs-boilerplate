@@ -19,7 +19,7 @@ else
     CMD_ACTIVE = $(DOCKER_COMPOSE_DEV)
 endif
 
-.PHONY: help dev-up dev-down dev-up-d dev-up-build prod-build prod-save prod-scp prod-deploy prod-up prod-down db-setup-prod db-setup logs shell-app shell-db db-migrate db-seed db-studio clean fix-permissions check
+.PHONY: help dev-up dev-down dev-up-d dev-up-build prod-build prod-save prod-scp prod-deploy prod-up prod-down db-setup-prod db-setup logs shell-app shell-db db-migrate db-seed db-studio clean fix-permissions check lint-fix
 
 # --- AYUDA ---
 help: ## Muestra este menú de ayuda
@@ -148,6 +148,10 @@ shell-db: ## Terminal dentro del contenedor de la DB (Solo si existe en el compo
 check: ## Validación proactiva: TypeScript y Linter
 	@echo "🔍 Validando tipos y linter dentro del contenedor..."
 	$(CMD_ACTIVE) exec app sh -c "npx tsc --noEmit && npm run lint"
+
+lint-fix: ## Corrige automáticamente errores de formateo y linter dentro del contenedor
+	@echo "🛠 Corrigiendo errores de linter dentro del contenedor..."
+	$(CMD_ACTIVE) exec app npm run lint:fix
 
 fix-permissions: ## Corrige permisos de archivos generados por Docker
 	sudo chown -R $(shell id -u):$(shell id -g) .
